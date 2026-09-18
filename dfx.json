@@ -1,29 +1,21 @@
 {
   "canisters": {
-    "internet_identity": {
-      "candid": "https://github.com/dfinity/internet-identity/releases/latest/download/internet_identity.did",
-      "frontend": {},
-      "remote": {
-        "id": {
-          "ic": "rdmx6-jaaaa-aaaaa-aaadq-cai"
-        }
-      },
-      "type": "custom",
-      "wasm": "https://github.com/dfinity/internet-identity/releases/latest/download/internet_identity_dev.wasm.gz"
-    },
-    "nft-marketplace-backend": {
-      "main": "src/nft-marketplace-backend/main.mo",
+    "opend": {
+      "main": "src/opend/main.mo",
       "type": "motoko"
     },
-    "nft-marketplace-frontend": {
+    "opend_assets": {
       "dependencies": [
-        "nft-marketplace-backend"
+        "opend"
       ],
+      "frontend": {
+        "entrypoint": "src/opend_assets/src/index.html"
+      },
       "source": [
-        "src/nft-marketplace-frontend/dist"
+        "src/opend_assets/assets",
+        "dist/opend_assets/"
       ],
-      "type": "assets",
-      "workspace": "nft-marketplace-frontend"
+      "type": "assets"
     }
   },
   "defaults": {
@@ -32,6 +24,12 @@
       "packtool": ""
     }
   },
-  "output_env_file": ".env",
+  "dfx": "0.9.3",
+  "networks": {
+    "local": {
+      "bind": "127.0.0.1:8000",
+      "type": "ephemeral"
+    }
+  },
   "version": 1
 }
