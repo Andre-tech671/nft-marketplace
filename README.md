@@ -1,133 +1,138 @@
-Copyright 2022 London App Brewery LTD (www.appbrewery.com)
+# OpenD: Architecture Design
 
-The code in this tutorial project is licended under the Apache License, Version 2.0 (the "License");
-you may not use this project except in compliance with the License.
-You may obtain a copy of the License at
+OpenD is an Internet Computer (IC) NFT marketplace project. It is organized as a
+React single-page frontend, two Motoko canisters, and an IC asset canister for
+serving the built frontend.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+> **Implementation status:** this document describes the repository as it is
+> today. The canister and UI names establish the intended marketplace design,
+> but marketplace operations, NFT state, and frontend-to-canister calls have not
+> yet been implemented.
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+## System topology
 
-Here is the TL;DR version of the above licence:
-https://tldrlegal.com/license/apache-license-2.0-(apache-2.0)
+```mermaid
+flowchart LR
+    U[Browser user]
+    A[opend_assets\nIC asset canister]
+    R[React application\nindex.jsx -> App]
+    M[opend\nMotoko marketplace canister]
+    N[nft\nMotoko NFT canister]
 
-# To Install and Run the Project
-
-1. start local dfx
-
+    U -->|loads static files| A
+    A -->|serves bundle| R
+    R -. future agent calls .-> M
+    M -. future NFT ownership/listing calls .-> N
 ```
+
+`dfx.json` declares all three canisters. `opend_assets` depends on `opend`, so
+DFX deploys the marketplace canister before the asset canister. The `nft`
+canister is independently declared and has no configured dependency at present.
+
+## Components
+
+| Component | Technology | Responsibility today | Location |
+| --- | --- | --- | --- |
+| `opend_assets` | React 17, Webpack, IC asset canister | Bundles and serves the browser UI and static images/styles. | `src/opend_assets/` |
+| `opend` | Motoko actor | Reserved marketplace backend boundary; the actor currently exposes no methods or persistent state. | `src/opend/main.mo` |
+| `nft` | Motoko actor | Reserved NFT backend boundary; on installation it writes a deployment message to the canister log. | `src/NFT/nft.mo` |
+| DFX configuration | DFX 0.9.3 | Defines canister names, types, frontend source paths, and the local replica network. | `dfx.json` |
+
+## Frontend structure
+
+```text
+index.html
+  └── index.jsx
+        └── App.jsx
+              ├── Header.jsx
+              ├── home-img.png
+              └── Footer.jsx
+
+Unused by App today, but present as future UI building blocks:
+  ├── Minter.jsx
+  └── Gallery.jsx
+        └── Item.jsx
+```
+
+The entry point renders `App` into `#root`. `App` only displays `Header`, the
+home image, and `Footer`; its navigation buttons do not currently change views.
+`Minter`, `Gallery`, and `Item` are static components and are not mounted by
+`App`. The browser bundle imports `Principal` and creates the anonymous
+principal (`2vxsx-fae`), but does not create an actor or call either backend.
+
+## Build and deployment path
+
+```text
+React/JSX + CSS + image assets
+        │ npm run build / npm start
+        ▼
+Webpack output: dist/opend_assets/
+        │ dfx deploy
+        ▼
+opend_assets asset canister
+        │ HTTP gateway / local replica
+        ▼
+Browser
+```
+
+Webpack uses `src/opend_assets/src/index.html` as its HTML template and writes
+the bundle to `dist/opend_assets/`. Its canister-ID environment setup supports
+local and IC deployments, but the current React code does not consume those
+values. During development, the Webpack server proxies `/api` to the local DFX
+replica on port 8000.
+
+## Intended marketplace design
+
+The legacy project notes (`task-execution.md`) describe the following desired
+workflow. It is an architectural target, **not a current capability**.
+
+1. A user mints an NFT and the marketplace records it in a collection such as
+   `mapOfNFTs`.
+2. The owner lists that NFT with a price and the marketplace records the listing
+   in a collection such as `mapOfListings`.
+3. Ownership is transferred to the marketplace canister while listed, implying
+   an escrow model.
+4. A token canister is used to settle payment when an NFT is bought.
+5. The frontend’s Minter, Discover/Gallery, item, sell button, and price-input
+   views call the marketplace and NFT actors through generated DFX declarations.
+
+The intended dependency direction is:
+
+```text
+Browser UI -> opend marketplace -> NFT canister
+                              -> token canister (not configured in this repo)
+```
+
+## Current gaps to close
+
+- Define the NFT data model, ownership model, metadata/image-storage approach,
+  and public Candid methods in `nft`.
+- Implement minting, listing, purchase, authorization, and stable-state upgrade
+  behavior in `opend`.
+- Add the token canister declaration and settlement integration if token-based
+  purchases are required.
+- Generate/import DFX actor declarations and wire React actions and queries to
+  those actors.
+- Add routing or view state so the existing Header can expose Minter, Discover,
+  and My NFTs screens.
+- Add tests for ownership checks, escrow transitions, payment failures, and
+  canister upgrades before treating the marketplace as production-ready.
+
+## Local development
+
+Install dependencies, start a local DFX replica, then run the frontend:
+
+```bash
+npm install
 dfx start --clean
-```
-
-2. Run NPM server
-
-```
 npm start
 ```
 
-3. Deploy canisters
+In a separate terminal, deploy the configured canisters:
 
-```
-dfx deploy --argument='("CryptoDunks #123", principal "gbdev-tyqsv-hnvqv-7mgz4-4kcfl-wbv6x-6khez-y56gq-uohqs-quomc-uqe", (vec {137; 80; 78; 71; 13; 10; 26; 10; 0; 0; 0; 13; 73; 72; 68; 82; 0; 0; 0; 10; 0; 0; 0; 10; 8; 6; 0; 0; 0; 141; 50; 207; 189; 0; 0; 0; 1; 115; 82; 71; 66; 0; 174; 206; 28; 233; 0; 0; 0; 68; 101; 88; 73; 102; 77; 77; 0; 42; 0; 0; 0; 8; 0; 1; 135; 105; 0; 4; 0; 0; 0; 1; 0; 0; 0; 26; 0; 0; 0; 0; 0; 3; 160; 1; 0; 3; 0; 0; 0; 1; 0; 1; 0; 0; 160; 2; 0; 4; 0; 0; 0; 1; 0; 0; 0; 10; 160; 3; 0; 4; 0; 0; 0; 1; 0; 0; 0; 10; 0; 0; 0; 0; 59; 120; 184; 245; 0; 0; 0; 113; 73; 68; 65; 84; 24; 25; 133; 143; 203; 13; 128; 48; 12; 67; 147; 94; 97; 30; 24; 0; 198; 134; 1; 96; 30; 56; 151; 56; 212; 85; 68; 17; 88; 106; 243; 241; 235; 39; 42; 183; 114; 137; 12; 106; 73; 236; 105; 98; 227; 152; 6; 193; 42; 114; 40; 214; 126; 50; 52; 8; 74; 183; 108; 158; 159; 243; 40; 253; 186; 75; 122; 131; 64; 0; 160; 192; 168; 109; 241; 47; 244; 154; 152; 112; 237; 159; 252; 105; 64; 95; 48; 61; 12; 3; 61; 167; 244; 38; 33; 43; 148; 96; 3; 71; 8; 102; 4; 43; 140; 164; 168; 250; 23; 219; 242; 38; 84; 91; 18; 112; 63; 0; 0; 0; 0; 73; 69; 78; 68; 174; 66; 96; 130;}))'
-```
-
-4. Head to localhost
-
-http://localhost:8080/
-
-# Minter Else HTML
-
-```
- <div className="minter-container">
-        <h3 className="Typography-root makeStyles-title-99 Typography-h3 form-Typography-gutterBottom">
-          Minted!
-        </h3>
-        <div className="horizontal-center">
-        </div>
-      </div>
-
+```bash
+dfx deploy
 ```
 
-# Loader HTML
-
-```
-<div className="lds-ellipsis">
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
-      </div>
-```
-
-# Button HTML
-
-```
-<div className="Chip-root makeStyles-chipBlue-108 Chip-clickable">
-            <span
-              onClick={}
-              className="form-Chip-label"
-            >
-              Sell
-            </span>
-            </div>
-```
-
-# Price Input HTML
-
-```
-<input
-        placeholder="Price in DANG"
-        type="number"
-        className="price-input"
-        value={}
-        onChange={}
-      />
-```
-
-# Price Label HTML
-
-```
-<div className="disButtonBase-root disChip-root makeStyles-price-23 disChip-outlined">
-          <span className="disChip-label">23 DANG</span>
-        </div>
-```
-
-# Creating NFT for Testing
-
-1. Mint an NFT on the command line to get NFT into mapOfNFTs:
-
-```
-dfx canister call opend mint '(vec {137; 80; 78; 71; 13; 10; 26; 10; 0; 0; 0; 13; 73; 72; 68; 82; 0; 0; 0; 10; 0; 0; 0; 10; 8; 6; 0; 0; 0; 141; 50; 207; 189; 0; 0; 0; 1; 115; 82; 71; 66; 0; 174; 206; 28; 233; 0; 0; 0; 68; 101; 88; 73; 102; 77; 77; 0; 42; 0; 0; 0; 8; 0; 1; 135; 105; 0; 4; 0; 0; 0; 1; 0; 0; 0; 26; 0; 0; 0; 0; 0; 3; 160; 1; 0; 3; 0; 0; 0; 1; 0; 1; 0; 0; 160; 2; 0; 4; 0; 0; 0; 1; 0; 0; 0; 10; 160; 3; 0; 4; 0; 0; 0; 1; 0; 0; 0; 10; 0; 0; 0; 0; 59; 120; 184; 245; 0; 0; 0; 113; 73; 68; 65; 84; 24; 25; 133; 143; 203; 13; 128; 48; 12; 67; 147; 94; 97; 30; 24; 0; 198; 134; 1; 96; 30; 56; 151; 56; 212; 85; 68; 17; 88; 106; 243; 241; 235; 39; 42; 183; 114; 137; 12; 106; 73; 236; 105; 98; 227; 152; 6; 193; 42; 114; 40; 214; 126; 50; 52; 8; 74; 183; 108; 158; 159; 243; 40; 253; 186; 75; 122; 131; 64; 0; 160; 192; 168; 109; 241; 47; 244; 154; 152; 112; 237; 159; 252; 105; 64; 95; 48; 61; 12; 3; 61; 167; 244; 38; 33; 43; 148; 96; 3; 71; 8; 102; 4; 43; 140; 164; 168; 250; 23; 219; 242; 38; 84; 91; 18; 112; 63; 0; 0; 0; 0; 73; 69; 78; 68; 174; 66; 96; 130;}, "CryptoDunks #123")'
-```
-
-2. List the item into mapOfListings:
-
-```
-dfx canister call opend listItem '(principal "<REPLACE WITH NFT CANISTER ID>", 2)'
-```
-
-3. Get OpenD canister ID:
-
-```
-dfx canister id opend
-```
-
-4. Transfer NFT to OpenD:
-
-```
-dfx canister call <REPLACE WITH NFT CANISTER ID> transferOwnership '(principal "<REPLACE WITH OPEND CANISTER ID>", true)'
-```
-
-# Conneting to the Token Canister
-
-1. Copy over the token declarations folder
-
-2. Set the token canister id into the <REPLACE WITH TOKEN CANISTER ID>
-
-```
-const dangPrincipal = Principal.fromText("<REPLACE WITH TOKEN CANISTER ID>");
-```
+The frontend development server normally serves on `http://localhost:8080/`.
+Use the URLs printed by DFX/Webpack if those ports are already occupied.
